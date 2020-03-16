@@ -8,11 +8,13 @@
 
 #define FIB_DEV "/dev/fibonacci"
 
+#include "bign.h"
+
 int main()
 {
     long long sz;
 
-    char buf[1];
+    struct bign128 buf[1];
     char write_buf[] = "testing writing";
     FILE *time_log;
     struct timespec t_start, t_end;
@@ -40,12 +42,13 @@ int main()
         clock_gettime(CLOCK_REALTIME, &t_start);
         sz = read(fd, buf, 1);
         clock_gettime(CLOCK_REALTIME, &t_end);
-        printf("Reading from " FIB_DEV
-               " at offset %d, returned the sequence "
-               "%lld.\n",
-               i, sz);
+        printf("Reading from " FIB_DEV " at offset %d, returned the sequence ",
+               i);
+        if (buf[0].upper == 0)
+            printf("%llx.\n", buf[0].lower);
+        else
+            printf("%llx%llx.\n", buf[0].upper, buf[0].lower);
         /* Log execution time */
-        sz = write(fd, write_buf, strlen(write_buf));
         fprintf(time_log, "%d %lld %ld %lld\n", i, sz,
                 t_end.tv_nsec - t_start.tv_nsec,
                 t_end.tv_nsec - t_start.tv_nsec - sz);
@@ -54,10 +57,12 @@ int main()
     for (int i = offset; i >= 0; i--) {
         lseek(fd, i, SEEK_SET);
         sz = read(fd, buf, 1);
-        printf("Reading from " FIB_DEV
-               " at offset %d, returned the sequence "
-               "%lld.\n",
-               i, sz);
+        printf("Reading from " FIB_DEV " at offset %d, returned the sequence ",
+               i);
+        if (buf[0].upper == 0)
+            printf("%llx.\n", buf[0].lower);
+        else
+            printf("%llx%llx.\n", buf[0].upper, buf[0].lower);
     }
 
     fclose(time_log);

@@ -17,7 +17,7 @@ for r in result:
     if (r.find('Reading') != -1):
         result_split.append(r.split(' '))
         k = int(result_split[-1][5].split(',')[0])
-        f0 = int(result_split[-1][9].split('.')[0])
+        f0 = int(result_split[-1][9].split('.')[0], 16)
         dics.append((k, f0))
 for i in dics:
     fib = i[1] 
