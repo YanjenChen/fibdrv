@@ -9,7 +9,9 @@
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
 
-#include "bign.h"
+#define uint64_t unsigned long long
+#define clz(s) __builtin_clzll(s)
+/* #include "bign.h" */
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -21,7 +23,7 @@ MODULE_VERSION("0.1");
 /* MAX_LENGTH is set to 92 because
  * ssize_t can't fit the number > 92
  */
-#define MAX_LENGTH 100
+#define MAX_LENGTH 92
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
@@ -31,27 +33,116 @@ static DEFINE_MUTEX(fib_mutex);
 /* Kernel space time measurement */
 static ktime_t kt;
 
-static struct bign128 fib_sequence(long long k)
+/* Switch between different algorithm */
+static uint64_t (*fib_sequence)(uint64_t);
+
+static uint64_t fib_sequence_add(uint64_t k)
 {
     /* FIXME: use clz/ctz and fast algorithms to speed up */
-    struct bign128 f[k + 2];
+    uint64_t f[k + 2];
 
-    f[0].lower = 0;
-    f[0].upper = 0;
-    f[1].lower = 1;
-    f[1].upper = 0;
+    f[0] = 0;
+    f[1] = 1;
 
     for (int i = 2; i <= k; i++) {
-        add_bign128(&f[i], &f[i - 1], &f[i - 2]);
+        f[i] = f[i - 1] + f[i - 2];
     }
 
     return f[k];
 }
 
-struct bign128 fib_time_proxy(long long k)
+static uint64_t smul(uint64_t x, uint64_t y)
+{
+    uint64_t out = 0;
+    uint64_t i = y;
+    for (int co = 0; i; i >>= 1, co++) {
+        if (i & 0x1 && co)
+            out += x << co;
+        else if (i & 0x1 && !co)
+            out += x;
+    }
+    return out;
+}
+
+static uint64_t fib_sequence_fast(uint64_t k)
+{
+    /* FIXME: use clz/ctz and fast algorithms to speed up */
+    uint64_t h = 0;
+    for (uint64_t i = k; i; ++h, i >>= 1)
+        ;
+
+    uint64_t a = 0;  // F(0) = 0
+    uint64_t b = 1;  // F(1) = 1
+
+    for (uint64_t mask = 1 << (h - 1); mask; mask >>= 1) {
+        uint64_t c = a * (2 * b - a);
+        uint64_t d = a * a + b * b;
+
+        if (mask & k) {
+            a = d;
+            b = c + d;
+        } else {
+            a = c;
+            b = d;
+        }
+    }
+
+    return a;
+}
+
+static uint64_t fib_sequence_fast_smul(uint64_t k)
+{
+    /* FIXME: use clz/ctz and fast algorithms to speed up */
+    uint64_t h = 0;
+    for (uint64_t i = k; i; ++h, i >>= 1)
+        ;
+
+    uint64_t a = 0;  // F(0) = 0
+    uint64_t b = 1;  // F(1) = 1
+
+    for (uint64_t mask = 1 << (h - 1); mask; mask >>= 1) {
+        uint64_t c = smul(a, (smul(2, b) - a));
+        uint64_t d = smul(a, a) + smul(b, b);
+
+        if (mask & k) {
+            a = d;
+            b = c + d;
+        } else {
+            a = c;
+            b = d;
+        }
+    }
+
+    return a;
+}
+
+static uint64_t fib_sequence_fast_clz(uint64_t k)
+{
+    int h = clz(k);
+
+    uint64_t a = 0;  // F(0) = 0
+    uint64_t b = 1;  // F(1) = 1
+
+    for (int mask = 1 << (h - 1); mask; mask >>= 1) {
+        uint64_t c = a * (2 * b - a);
+        uint64_t d = a * a + b * b;
+
+        if (mask & k) {
+            a = d;
+            b = c + d;
+        } else {
+            a = c;
+            b = d;
+        }
+    }
+
+    return a;
+}
+
+static uint64_t fib_time_proxy(uint64_t k)
 {
     kt = ktime_get();
-    struct bign128 result = fib_sequence(k);
+    uint64_t result = fib_sequence(k);
     kt = ktime_sub(ktime_get(), kt);
 
     return result;
@@ -78,8 +169,8 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    struct bign128 result = fib_time_proxy(*offset);
-    copy_to_user(buf, &result, sizeof(struct bign128));
+    uint64_t result = fib_time_proxy(*offset);
+    copy_to_user(buf, &result, sizeof(uint64_t));
     return ktime_to_ns(kt);
 }
 
@@ -89,6 +180,22 @@ static ssize_t fib_write(struct file *file,
                          size_t size,
                          loff_t *offset)
 {
+    switch (size) {
+    case 0:
+        fib_sequence = fib_sequence_add;
+        break;
+    case 1:
+        fib_sequence = fib_sequence_fast;
+        break;
+    case 2:
+        fib_sequence = fib_sequence_fast_clz;
+        break;
+    case 3:
+        fib_sequence = fib_sequence_fast_smul;
+        break;
+    default:
+        break;
+    }
     return 1;
 }
 
@@ -169,6 +276,9 @@ static int __init init_fib_dev(void)
         rc = -4;
         goto failed_device_create;
     }
+
+    /* If init success, set default algorithm */
+    fib_sequence = fib_sequence_add;
     return rc;
 failed_device_create:
     class_destroy(fib_class);

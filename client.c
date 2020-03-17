@@ -8,19 +8,19 @@
 
 #define FIB_DEV "/dev/fibonacci"
 
-#include "bign.h"
+/* #include "bign.h" */
 
 int main()
 {
     long long sz;
 
-    struct bign128 buf[1];
+    unsigned long long buf[1];
     char write_buf[] = "testing writing";
     FILE *time_log;
     struct timespec t_start, t_end;
     int offset = 100; /* TODO: try test something bigger than the limit */
 
-    time_log = fopen("time.log", "w");
+    time_log = fopen("fibfastadd.time.log", "w");
     if (!time_log) {
         perror("Failed to open log file");
         exit(1);
@@ -37,6 +37,9 @@ int main()
         printf("Writing to " FIB_DEV ", returned the sequence %lld\n", sz);
     }
 
+    /* Set which algorithm to use */
+    sz = write(fd, write_buf, 0);
+
     for (int i = 0; i <= offset; i++) {
         lseek(fd, i, SEEK_SET);
         clock_gettime(CLOCK_REALTIME, &t_start);
@@ -44,10 +47,7 @@ int main()
         clock_gettime(CLOCK_REALTIME, &t_end);
         printf("Reading from " FIB_DEV " at offset %d, returned the sequence ",
                i);
-        if (buf[0].upper == 0)
-            printf("%llx.\n", buf[0].lower);
-        else
-            printf("%llx%llx.\n", buf[0].upper, buf[0].lower);
+        printf("%llx.\n", buf[0]);
         /* Log execution time */
         fprintf(time_log, "%d %lld %ld %lld\n", i, sz,
                 t_end.tv_nsec - t_start.tv_nsec,
@@ -59,10 +59,7 @@ int main()
         sz = read(fd, buf, 1);
         printf("Reading from " FIB_DEV " at offset %d, returned the sequence ",
                i);
-        if (buf[0].upper == 0)
-            printf("%llx.\n", buf[0].lower);
-        else
-            printf("%llx%llx.\n", buf[0].upper, buf[0].lower);
+        printf("%llx.\n", buf[0]);
     }
 
     fclose(time_log);

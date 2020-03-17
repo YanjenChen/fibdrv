@@ -4,8 +4,10 @@ set output 'timelog.png'
 set autoscale
 set xlabel 'size'
 set ylabel 'time(ns)'
-set title 'runtime'
+set title 'fib runtime'
+set key left top
 
-plot [:][:]'time.log' using 1:2 with line title 'kernel',\
-'' using 1:3 with line title 'user',\
-'' using 1:4 with line title 'kernel to user',\
+plot [:][:]'fibadd.time.log' using 1:2 with line title 'add',\
+'fibfast.time.log' using 1:2 with line title 'fast w/o clz smul',\
+'fibfastsmul.time.log' using 1:2 with line title 'fast with smul',\
+'fibfastclz.time.log' using 1:2 with line title 'fast with clz',\
